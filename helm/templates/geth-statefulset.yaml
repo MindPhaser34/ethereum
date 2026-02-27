@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "node.fullname" . }}-geth
+  labels:
+    {{- include "node.geth.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "node.fullname" . }}-geth
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "node.geth.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "node.geth.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: geth
+          image: "{{ .Values.geth.image.repository }}:{{ .Values.geth.image.tag }}"
+          imagePullPolicy: {{ .Values.geth.image.pullPolicy }}
+          command: ["geth"]
+          args:
+{{ include "node.geth.args" . | trim | indent 12 }}
+          ports:
+            - name: rpc
+              containerPort: {{ .Values.geth.config.http.port }}
+              protocol: TCP
+            - name: ws
+              containerPort: {{ .Values.geth.config.ws.port }}
+              protocol: TCP
+            - name: authrpc
+              containerPort: {{ .Values.geth.config.authrpc.port }}
+              protocol: TCP
+            - name: p2p-tcp
+              containerPort: {{ .Values.geth.config.p2p.port }}
+              protocol: TCP
+            - name: p2p-udp
+              containerPort: {{ .Values.geth.config.p2p.port }}
+              protocol: UDP
+            {{- if .Values.geth.config.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.geth.config.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /root/.ethereum
+            - name: jwt
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            {{- toYaml .Values.geth.resources | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: rpc
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: jwt
+          secret:
+            secretName: {{ include "node.jwtSecretName" . }}
+        {{- if eq .Values.geth.persistence.type "hostPath" }}
+        - name: data
+          hostPath:
+            path: {{ .Values.geth.persistence.hostPath }}
+            type: DirectoryOrCreate
+        {{- end }}
+  {{- if eq .Values.geth.persistence.type "pvc" }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.geth.persistence.accessModes | nindent 10 }}
+        {{- if .Values.geth.persistence.storageClassName }}
+        storageClassName: {{ .Values.geth.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.geth.persistence.size }}
+  {{- end }}

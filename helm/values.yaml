@@ -1,0 +1,178 @@
+# -- Ethereum network: mainnet, sepolia, or hoodi
+network: mainnet
+
+# -- Deploy as archive node (full historical state). Requires significantly more storage.
+archiveNode: false
+
+# -- JWT secret shared between geth and beacon
+jwt:
+  secret: ""   #  Hex string (64 chars). If empty, a random secret will be generated on each deployment.
+
+
+# -- Geth (Execution Layer)
+geth:
+  image:
+    repository: ethereum/client-go
+    tag: v1.16.8
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
+
+  # -- Geth command-line arguments (rendered from configmap)
+  config:
+    http:
+      enabled: true
+      addr: "0.0.0.0"
+      port: 8545
+      api: "eth,net,web3,engine,txpool,debug"
+      vhosts: "*"
+    ws:
+      enabled: true
+      addr: "0.0.0.0"
+      port: 8546
+      api: "eth,net,web3"
+    authrpc:
+      addr: "0.0.0.0"
+      port: 8551
+      vhosts: "*"
+    db:
+      engine: pebble
+    maxpeers: 300
+    metrics:
+      enabled: true
+      addr: "0.0.0.0"
+      port: 6060
+    p2p:
+      port: 30303
+    # -- Extra arguments appended to geth command
+    extraArgs: []
+
+  service:
+    type: ClusterIP
+
+  persistence:
+    # -- "hostPath" or "pvc"
+    type: pvc
+    # -- mainnet: 2Ti (archive: 15Ti), sepolia/hoodi: 200Gi
+    size: 2Ti
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    # -- Used only when type=hostPath
+    hostPath: /data/geth
+
+# -- Nimbus (Consensus / Beacon Layer)
+beacon:
+  # -- Deploy local beacon node or use external endpoint
+  enabled: true
+
+  image:
+    repository: statusim/nimbus-eth2
+    tag: multiarch-v25.12.0
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
+
+  config:
+    history: prune
+    rest:
+      enabled: true
+      address: "0.0.0.0"
+      port: 5052
+    metrics:
+      enabled: true
+      address: "0.0.0.0"
+      port: 8001
+    p2p:
+      port: 9000
+    # -- Extra arguments appended to nimbus command
+    extraArgs: []
+
+  service:
+    type: ClusterIP
+
+  persistence:
+    type: pvc # "hostPath" or "pvc"
+    # -- mainnet: 500Gi (archive: 2Ti), sepolia/hoodi: 100Gi
+    size: 500Gi
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    # -- Used only when type=hostPath
+    hostPath: /data/nimbus
+
+# -- Ingress (nginx)
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  # -- Paths are proxied as-is unless `rewrite: true` is set.
+  # -- Paths with `rewrite: true` go into a separate Ingress that strips the
+  # -- prefix before proxying (e.g. /beacon/eth/v1/... → /eth/v1/...).
+  #
+  # -- Example: single host, nimbus behind /beacon with rewrite:
+  # hosts:
+  #   - host: eth.example.com
+  #     paths:
+  #       - path: /
+  #         service: geth
+  #         port: 8545
+  #         pathType: Prefix
+  #       - path: /beacon
+  #         service: nimbus
+  #         port: 5052
+  #         rewrite: true
+  #
+  # -- Example: dedicated hosts (no rewrite needed):
+  # hosts:
+  #   - host: rpc.eth.example.com
+  #     paths:
+  #       - path: /
+  #         service: geth
+  #         port: 8545
+  #         pathType: Prefix
+  #   - host: beacon.eth.example.com
+  #     paths:
+  #       - path: /
+  #         service: nimbus
+  #         port: 5052
+  #         pathType: Prefix
+  hosts:
+    - host: eth.example.com
+      paths:
+        - path: /
+          service: geth
+          port: 8545
+          pathType: Prefix
+        - path: /eth/v1
+          service: nimbus
+          port: 5052
+          pathType: Prefix
+  tls: []
+  #  - secretName: eth-tls
+  #    hosts:
+  #      - eth.example.com
+
+# -- Common labels added to all resources
+commonLabels: {}
+
+# -- Node selector for all pods
+nodeSelector: {}
+
+# -- Tolerations for all pods
+tolerations: []
+
+# -- Affinity rules for all pods
+affinity: {}

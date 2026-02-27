@@ -1,0 +1,85 @@
+{{- if .Values.ingress.enabled }}
+{{- include "node.validateIngressPaths" . -}}
+{{/*
+Primary ingress — all paths without rewrite.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "node.fullname" . }}
+  labels:
+    {{- include "node.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          {{- if not .rewrite }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "node.ingressBackendServiceName" (dict "root" $ "service" .service) }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+          {{- end }}
+    {{- end }}
+{{- $hasRewrite := false }}
+{{- range .Values.ingress.hosts }}
+{{- range .paths }}
+{{- if .rewrite }}
+{{- $hasRewrite = true }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $hasRewrite }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "node.fullname" . }}-rewrite
+  labels:
+    {{- include "node.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          {{- if .rewrite }}
+          - path: {{ .path }}(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ include "node.ingressBackendServiceName" (dict "root" $ "service" .service) }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

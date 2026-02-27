@@ -1,0 +1,36 @@
+Ethereum Node deployed: {{ include "node.fullname" . }}
+Network: {{ .Values.network }}
+{{- if .Values.archiveNode }}
+Mode: archive (full historical state)
+{{- end }}
+
+Components:
+  - Geth (Execution Layer): {{ .Values.geth.image.repository }}:{{ .Values.geth.image.tag }}
+{{- if .Values.beacon.enabled }}
+  - Nimbus (Consensus Layer): {{ .Values.beacon.image.repository }}:{{ .Values.beacon.image.tag }}
+{{- end }}
+
+Services:
+  - Geth RPC:  {{ include "node.fullname" . }}-geth:{{ .Values.geth.config.http.port }}
+  - Geth WS:   {{ include "node.fullname" . }}-geth:{{ .Values.geth.config.ws.port }}
+{{- if .Values.beacon.enabled }}
+  - Nimbus REST: {{ include "node.fullname" . }}-nimbus:{{ .Values.beacon.config.rest.port }}
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+Ingress:
+{{- range .Values.ingress.hosts }}
+  - {{ .host }}
+{{- end }}
+{{- end }}
+
+Storage:
+  - Geth: {{ .Values.geth.persistence.type }}
+    {{- if eq .Values.geth.persistence.type "pvc" }} ({{ .Values.geth.persistence.size }}){{ end }}
+    {{- if eq .Values.geth.persistence.type "hostPath" }} ({{ .Values.geth.persistence.hostPath }}){{ end }}
+{{- if .Values.beacon.enabled }}
+  - Nimbus: {{ .Values.beacon.persistence.type }}
+    {{- if eq .Values.beacon.persistence.type "pvc" }} ({{ .Values.beacon.persistence.size }}){{ end }}
+    {{- if eq .Values.beacon.persistence.type "hostPath" }} ({{ .Values.beacon.persistence.hostPath }}){{ end }}
+{{- end }}

@@ -1,0 +1,130 @@
+services:
+  geth:
+    image: ethereum/client-go:v1.16.8
+    container_name: geth
+    restart: unless-stopped
+    ports:
+      - "8545:8545"     # JSON-RPC
+      - "8546:8546"     # WebSocket
+      - "30303:30303"   # P2P
+      - "6060:6060"     # Metrics
+    volumes:
+      - ./geth-data:/root/.ethereum
+      - ./jwt.hex:/jwt.hex:ro
+    command:
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,engine,txpool,debug
+      - --http.vhosts=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=eth,net,web3
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.port=8551
+      - --authrpc.vhosts=*
+      - --authrpc.jwtsecret=/jwt.hex
+      - --db.engine=pebble
+      - --maxpeers=300
+      - --metrics
+      - --metrics.addr=0.0.0.0
+      - --metrics.port=6060
+    networks:
+      - eth-network
+
+  nimbus:
+    image: statusim/nimbus-eth2:multiarch-v25.12.0
+    container_name: nimbus
+    restart: unless-stopped
+    depends_on:
+      - geth
+    ports:
+      - "9000:9000"     # P2P
+      - "5052:5052"     # REST API
+      - "8001:8001"     # Metrics
+    volumes:
+      - ./nimbus-data:/data
+      - ./jwt.hex:/jwt.hex:ro
+    command:
+      - --network=mainnet
+      - --data-dir=/data
+      - --el=http://geth:8551
+      - --jwt-secret=/jwt.hex
+      - --rest
+      - --rest-address=0.0.0.0
+      - --history=prune
+      - --metrics
+      - --metrics-address=0.0.0.0
+      - --metrics-port=8001
+    networks:
+      - eth-network
+
+  # Ethereum metrics exporter
+  eth-exporter:
+    build:
+      context: ./monitoring/eth-exporter
+      dockerfile: Dockerfile
+    container_name: eth-exporter
+    restart: unless-stopped
+    environment:
+      - GETH_RPC_URL=http://geth:8545
+      - NIMBUS_API_URL=http://nimbus:5052
+      - EXPORTER_PORT=9333
+      - SCRAPE_INTERVAL=15
+    ports:
+      - "9333:9333"
+    depends_on:
+      - geth
+      - nimbus
+    networks:
+      - eth-network
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v3.5.1
+    container_name: eth-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - eth-exporter
+    networks:
+      - eth-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:12.3.1
+    container_name: eth-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - eth-network
+
+networks:
+  eth-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:

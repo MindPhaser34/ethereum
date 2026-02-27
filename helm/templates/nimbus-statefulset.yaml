@@ -1,0 +1,117 @@
+{{- if .Values.beacon.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "node.fullname" . }}-nimbus
+  labels:
+    {{- include "node.nimbus.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "node.fullname" . }}-nimbus
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "node.nimbus.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "node.nimbus.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: permissions-check
+          image: "busybox:1.36"
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              if [ -d /data ] && [ "$(stat -c '%u:%g' /data)" = "1000:1000" ]; then
+                echo "data dir exists with correct owner, skipping";
+              else
+                mkdir -p /data &&
+                chown -R 1000:1000 /data &&
+                chmod 700 /data &&
+                echo "data dir created and permissions set";
+              fi
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: nimbus
+          image: "{{ .Values.beacon.image.repository }}:{{ .Values.beacon.image.tag }}"
+          imagePullPolicy: {{ .Values.beacon.image.pullPolicy }}
+          command: ["/home/user/nimbus_beacon_node"]
+          args:
+{{ include "node.nimbus.args" . | trim | indent 12 }}
+          ports:
+            {{- if .Values.beacon.config.rest.enabled }}
+            - name: rest
+              containerPort: {{ .Values.beacon.config.rest.port }}
+              protocol: TCP
+            {{- end }}
+            - name: p2p-tcp
+              containerPort: {{ .Values.beacon.config.p2p.port }}
+              protocol: TCP
+            - name: p2p-udp
+              containerPort: {{ .Values.beacon.config.p2p.port }}
+              protocol: UDP
+            {{- if .Values.beacon.config.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.beacon.config.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: jwt
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            {{- toYaml .Values.beacon.resources | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: rest
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /eth/v1/node/health
+              port: rest
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: jwt
+          secret:
+            secretName: {{ include "node.fullname" . }}-jwt
+        {{- if eq .Values.beacon.persistence.type "hostPath" }}
+        - name: data
+          hostPath:
+            path: {{ .Values.beacon.persistence.hostPath }}
+            type: DirectoryOrCreate
+        {{- end }}
+  {{- if eq .Values.beacon.persistence.type "pvc" }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.beacon.persistence.accessModes | nindent 10 }}
+        {{- if .Values.beacon.persistence.storageClassName }}
+        storageClassName: {{ .Values.beacon.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.beacon.persistence.size }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,33 @@
+{{- if .Values.beacon.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "node.fullname" . }}-nimbus
+  labels:
+    {{- include "node.nimbus.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.beacon.service.type }}
+  selector:
+    {{- include "node.nimbus.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- if .Values.beacon.config.rest.enabled }}
+    - name: rest
+      port: {{ .Values.beacon.config.rest.port }}
+      targetPort: rest
+      protocol: TCP
+    {{- end }}
+    - name: p2p-tcp
+      port: {{ .Values.beacon.config.p2p.port }}
+      targetPort: p2p-tcp
+      protocol: TCP
+    - name: p2p-udp
+      port: {{ .Values.beacon.config.p2p.port }}
+      targetPort: p2p-udp
+      protocol: UDP
+    {{- if .Values.beacon.config.metrics.enabled }}
+    - name: metrics
+      port: {{ .Values.beacon.config.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
+{{- end }}

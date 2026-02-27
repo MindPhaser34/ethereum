@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ethereum-node
+description: Ethereum full node (Geth execution + Nimbus consensus)
+type: application
+version: 0.1.0
+appVersion: "1.16.8"
