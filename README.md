@@ -18,19 +18,15 @@ Two deployment options: Docker Compose (local development) and Helm chart (Kuber
 ```
 eth/
 ├── docker-compose.yaml          # Docker Compose (nodes + monitoring)
-├── jwt.hex                      # JWT secret (Geth <-> Nimbus)
 ├── helm/
 │   └── ethereum-node/           # Helm chart (Kubernetes)
 │       ├── Chart.yaml
 │       ├── values.yaml          # Production defaults
-│       ├── values.local.yaml    # Local k3s profile
 │       └── templates/
 ├── monitoring/
 │   ├── eth-exporter/            # Custom Prometheus exporter (Python)
 │   ├── prometheus/              # Prometheus config
 │   └── grafana/                 # Dashboards & datasources
-└── docs/
-    └── helm-k3s-local-guide.md  # Local Helm testing on macOS
 ```
 
 ---
@@ -85,7 +81,7 @@ helm upgrade --install eth-node helm/ethereum-node \
 - **Network**: `mainnet` (default), `sepolia`, or `hoodi` — single parameter for both Geth and Nimbus
 - **Archive mode**: `archiveNode: true` for full historical state (Geth `gcmode=archive` + Nimbus `history=archive`)
 - **Storage**: `pvc` (production, 2Ti Geth / 500Gi Nimbus) or `hostPath` (local testing)
-- **Beacon**: built-in Nimbus (`beacon.enabled: true`) or external endpoint (`beacon.externalUrl`)
+- **Beacon**: built-in Nimbus (`beacon.enabled: true`)
 - **Ingress**: single nginx Ingress resource with explicit per-path backend routing (no rewrite)
 - **JWT**: fixed secret or auto-generated on each deploy
 
@@ -142,8 +138,6 @@ curl -s http://127.0.0.1:8545 \
   -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}'
 ```
-
-Local testing on macOS via k3d: [docs/helm-k3s-local-guide.md](docs/helm-k3s-local-guide.md)
 
 ## Metrics
 
@@ -221,13 +215,12 @@ Dashboard is auto-provisioned and available at:
 │      Geth       │────▶│                  │
 │  (Execution)    │ RPC │   ETH Exporter   │      ┌─────────────┐
 └─────────────────┘     │     (Python)     │─────▶│  Prometheus │
-                        │                  │      │   (v3.5.1)  │
-┌─────────────────┐     │                  │      └──────┬──────┘
+                        │                  │      └──────┬──────┘
+┌─────────────────┐     │                  │             │
 │     Nimbus      │────▶│                  │             │
 │  (Consensus)    │ REST└──────────────────┘             ▼
 └─────────────────┘                               ┌─────────────┐
                                                   │   Grafana   │
-                                                  │  (12.3.1)   │
                                                   └─────────────┘
 ```
 
